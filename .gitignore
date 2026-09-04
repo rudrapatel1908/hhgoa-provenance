@@ -1,0 +1,44 @@
+# Environment
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Virtual environments
+.venv/
+.venv311/
+venv/
+env/
+ENV/
+.venv*/
+
+# Node (future-proofing, none present currently)
+node_modules/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local runtime/generated files
+*.log
+
+# Example photos excluded — copyright/consent concerns, see examples/README.md
+examples/*.jpg
+examples/*.jpeg
+examples/*.png
+!examples/README.md

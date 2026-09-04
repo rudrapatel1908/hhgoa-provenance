@@ -1,0 +1,49 @@
+{
+  "schema": "hhgoa.media-provenance",
+  "schema_version": 1,
+  "record_id": "cca80f6d-ace1-4ee7-9064-2c2f2837bd37",
+  "created_at": "2026-09-03T17:53:18+00:00",
+  "input": {
+    "sha256": "b3db088eee86e6db4d322b42d95d41b87975cbf616215ed0827ba32f4ace0a05",
+    "mime_type": "image/png",
+    "width": 350,
+    "height": 368,
+    "file_size_bytes": 156568
+  },
+  "face": {
+    "count": 1,
+    "embedding_sha256": "79ee931c70f2b135d0303431ce26bd1ede6b504ee23908d8ba8034afcdc6c52e",
+    "quality": "pass",
+    "match_method": "face_recognition.face_distance",
+    "match_distance": 0.099599,
+    "match_threshold": 0.6,
+    "match_decision": "pass"
+  },
+  "claimed_source": {
+    "url": "https://www.linkedin.com/in/terrencerohan",
+    "canonical_url": "https://www.linkedin.com/in/terrencerohan",
+    "platform": "linkedin.com",
+    "title": "Terrence Rohan - Otherwise Fund | LinkedIn"
+  },
+  "search": {
+    "provider": "serpapi",
+    "method": "google_lens",
+    "query_source": "original_input_image",
+    "candidate_count": 20,
+    "exact_match_count": 0,
+    "visual_match_count": 20,
+    "claimed_source_rediscovered": true
+  },
+  "verification": {
+    "status": "corroborated",
+    "method": "face_and_source_and_search",
+    "policy": {
+      "version": "1.1",
+      "single_face_required": true,
+      "source_access_required": true,
+      "face_match_required": true,
+      "live_search_required": false,
+      "source_rediscovery_required_for_corroboration": true
+    }
+  }
+}

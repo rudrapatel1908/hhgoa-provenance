@@ -1,0 +1,38 @@
+# Recommended interpreter: Python 3.11 (dlib wheels and web3 are both
+# well-supported there; 3.12 works too but dlib wheel availability lags
+# on some platforms -- see README "Setup").
+#
+# WINDOWS NOTE: PyPI has no prebuilt dlib wheel for Windows at all --
+# pip will try to compile it from source (needs CMake + a C++ compiler).
+# The easier path on Windows is to install dlib via conda-forge FIRST
+# (`conda install -c conda-forge dlib`), then run this requirements.txt
+# with dlib left unpinned below so pip accepts the conda-installed
+# version instead of trying to rebuild an exact pinned version itself.
+
+# Vision
+face_recognition==1.3.0
+dlib
+opencv-python-headless==4.10.0.84
+numpy==1.26.4
+Pillow==10.4.0
+
+# Web / parsing
+requests==2.32.3
+beautifulsoup4==4.12.3
+
+# Blockchain
+web3==7.2.0
+
+# Data / CLI
+pydantic==2.9.2
+rich==13.9.2
+python-dotenv==1.0.1
+
+# Testing
+pytest==8.3.3
+pytest-mock==3.14.0
+
+# Local API adapter (for the UI layer)
+fastapi==0.115.0
+uvicorn==0.31.0
+python-multipart==0.0.12

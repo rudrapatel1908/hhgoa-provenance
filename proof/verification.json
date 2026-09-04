@@ -1,0 +1,9 @@
+{
+  "final_status": "on_chain_verified",
+  "local_manifest_hash": "0x2e42f58e241b5d6d98a5dd0a42cfef2d6c139811da952ec3ca12eb1d6c6ec9fc",
+  "onchain_manifest_hash": "0x2e42f58e241b5d6d98a5dd0a42cfef2d6c139811da952ec3ca12eb1d6c6ec9fc",
+  "contract_address": "0x82fA258c933c2336Fc6B49231BD91776B819C81c",
+  "transaction_hash": "5c2e0849ef785db0c922a08441ba5c1a518775580031e5e8822d563a4c73089a",
+  "block_number": 46639561,
+  "dry_run": false
+}
