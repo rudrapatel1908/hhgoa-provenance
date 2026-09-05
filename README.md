@@ -480,5 +480,5 @@ hhgoa-provenance/
 [x] negative case (face mismatch / unreachable source -> REJECTED / NO_MATCH)
 [x] local API adapter, zero duplicated business logic vs. CLI
 [x] 78 tests passing
-[ ] real on-chain registration -- deliberately deferred to the final demo
+[x] real on-chain registration 
 ```
