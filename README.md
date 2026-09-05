@@ -1,169 +1,244 @@
-# 🔗 TRACE — HH Goa Provenance Engine
+# TRACE
 
-**Does this photo actually belong to that public post — and can I prove it, permanently?**
+### THE WEB LEAVES TRACES.
 
-A media provenance pipeline combining image-only social-media
-discovery, face correspondence, a genuine live reverse-image search,
-and cryptographic anchoring on Polygon Amoy. Built for Hacker House Goa
-2026, Task 3.
+**TRACE** is a public-media provenance and verification system. Give it
+an image and it performs a genuine live reverse-image search, discovers
+publicly accessible social-media sources, validates the visual
+correspondence, builds a deterministic cryptographic provenance record,
+anchors that record on Polygon Amoy, and independently re-verifies the
+on-chain commitment.
 
-`Python 3.11` · `face_recognition / dlib` · `SerpApi Google Lens` · `web3.py` · `Solidity ^0.8.24` · `Polygon Amoy (80002)` · `FastAPI`
+`Python 3.11` &nbsp;·&nbsp; `face_recognition / dlib` &nbsp;·&nbsp; `SerpApi Google Lens` &nbsp;·&nbsp; `web3.py` &nbsp;·&nbsp; `Solidity ^0.8.24` &nbsp;·&nbsp; `Polygon Amoy (80002)` &nbsp;·&nbsp; `FastAPI`
 
-CLI-first, with a local API adapter for an optional UI layer. No public deployment.
-
----
-
-## Why this exists
-
-Task 3 asks for: face scan → web/social search → matching public post →
-blockchain upload → programmatic verification. The naive version of
-that is gameable in two obvious ways — a user-supplied URL alone proves
-nothing (it's just a claim), and a reverse-image search alone can be
-gamed by cherry-picking whichever result is convenient. So this system
-has **two entry points that both have to hold up independently**:
-
-```
-image-only discovery  +  claimed-source verification
-        (no URL given)      (independent search corroboration)
-                    +  face correspondence
-                    +  cryptographic manifest
-                    +  on-chain anchoring
-```
-
-**`discover`** takes only an image — no URL — uploads it to SerpApi's
-Google Lens, filters results down to actual social-media platforms
-(Wikipedia, news, blogs don't count), and validates candidates in rank
-order until one's face genuinely matches. **`register`** takes a
-claimed URL and independently searches the *original input photo*
-(the same mechanism `discover` uses, not the source's own image) to
-check whether that exact URL is rediscovered on its own. Only when a
-claimed source is independently rediscovered, starting from nothing
-but the photo, does evidence reach `CORROBORATED`.
+Built for Hacker House Goa 2026, Task 3. CLI-first, with a local API
+adapter for an optional UI layer. No public deployment.
 
 ---
 
-## Quick start
+## What TRACE is not
 
-```bash
-python3.11 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env   # fill in SerpApi key, RPC URL, testnet wallet key
-
-# 1. Find a matching public social-media post from an image alone — no URL, no cost
-python -m src.cli discover --image examples/positive.jpg
-
-# 2. Verify a specific claimed URL, without spending anything
-python -m src.cli register --image examples/positive.jpg \
-  --url "https://facebook.com/.../post" --dry-run
-
-# 3. Confirm your RPC/wallet/ABI/contract wiring, read-only
-python -m src.cli check-config
-
-# 4. Go on-chain for real (prompts for typed confirmation)
-python -m src.cli register --image examples/positive.jpg \
-  --url "https://facebook.com/.../post"
-
-# 5. Independently re-verify what's on-chain against the local manifest
-python -m src.cli audit --manifest proof/manifest.json
-```
+To be precise about scope, since this matters for a system that touches
+faces and blockchains: TRACE is not a proof-of-identity system, not a
+"100% match" claim, not a surveillance tool, and it does not search
+"the entire internet" — it searches whatever a live reverse-image
+search provider has indexed. Every status this system reports —
+`VERIFIED`, `CORROBORATED`, `NO_MATCH` — is a statement about evidence
+it actually collected, not a claim about a person's real-world identity.
 
 ---
 
-## A real run, end to end
+## Current real project state
 
-This is one actual `discover` → `register --dry-run` pass — real SerpApi
-calls, real face comparisons, nothing mocked or hardcoded. **The
-on-chain step has deliberately not been executed yet** — this project
-reserves its remaining testnet POL for one final, intentional
-registration, done only after everything upstream of it is proven. So
-this table stops at `CORROBORATED`, honestly, rather than showing a
-transaction that hasn't happened.
+Everything below reflects what the repository actually does right now,
+confirmed by running it — not a target state.
+
+- **Image-only discovery** (`discover`) and **claimed-source
+  verification** (`register`) are both implemented and have been run
+  for real against live SerpApi results.
+- A real `discover` → `register --dry-run` pass has reached
+  `CORROBORATED` (see the example run below).
+- **The real on-chain registration has deliberately not been executed
+  yet.** The contract is deployed on Polygon Amoy and `check-config`
+  confirms the RPC/wallet/ABI/contract wiring is correct end-to-end via
+  a genuine read-only call — but no `registerRecord()` transaction has
+  been broadcast. The project's remaining testnet POL is intentionally
+  reserved for one final, deliberate registration, done only once
+  everything upstream of it — discovery, verification, audit behavior,
+  tamper detection, the negative case — has been proven first.
+- **78 automated tests pass.** All external services (SerpApi, Pinata,
+  Polygon RPC) are mocked in the test suite; nothing about the test
+  count depends on the real transaction happening.
+
+This section will be updated with the real transaction hash, block
+number, and audit result the moment that registration actually happens
+— not before.
+
+---
+
+## Example verified run
+
+One actual `discover` → `register --dry-run` execution. Real SerpApi
+calls, real face comparisons. Labeled as an example run, not a
+guaranteed or hardcoded output — a different image or source will
+produce different real numbers.
 
 | Stage | Result |
 |---|---|
 | `discover` — face analysis | 1 face detected |
 | `discover` — live search | 59 raw results → 20 visual matches → 2 social-media candidates |
-| `discover` — social validation | Facebook post found at candidate rank **#10**, face distance `0.1189` (threshold `0.6`) |
-| `register --dry-run` on that URL | independent second search (from the original photo) rediscovers the same URL |
+| `discover` — social validation | Facebook post found, candidate rank **#10**, face distance `0.1189` (threshold `0.6`) |
+| `register --dry-run` on that URL | independent second search (from the original photo, not the source's image) rediscovers the same URL |
 | Evidence decision | `CORROBORATED` |
 | Manifest hash | `0x0e517b6160...729ac179f0` (SHA-256) |
-| Blockchain | not yet executed — reserved for final demo |
-
-Every number above came from an actual terminal run against live
-SerpApi results, not a fixture.
+| Blockchain | not yet executed |
 
 ---
 
-## Backend pipeline, for judges
+## How TRACE works
 
-Everything in this project runs through the same Python modules,
-whether it's invoked from the CLI or the local API adapter — there is
-exactly one implementation of the business logic, not two.
-
-```
-src/
-├── pipeline.py     orchestrates both flows below; owns the state machine
-├── vision.py       face detect / quality-check / embed / compare (pretrained, no training)
-├── source.py       claimed-URL fetch, canonicalization, og:image extraction, social-platform classification
-├── search.py       SerpApi Google Lens client (URL search + real image-upload search), candidate parsing/ranking
-├── manifest.py     canonical JSON serialization + deterministic SHA-256
-├── ipfs.py         optional Pinata pinning (non-blocking on failure)
-├── blockchain.py   web3.py: config, tx build/sign/send, receipt wait, read-only verify
-├── models.py       every cross-module value is a typed dataclass — no bare dicts
-├── reporting.py    Rich terminal rendering
-├── cli.py          argument parsing, dispatch, the POL-protection confirmation gate
-└── api.py          thin FastAPI adapter — zero duplicated logic, calls straight into pipeline.py
-```
-
-### The two flows
-
-**`discover(image_path)`** — image-only, the primary Task 3 flow:
-```
-INPUT_VALIDATION -> FACE_ANALYSIS -> LIVE_SEARCH (image upload, real
-SerpApi endpoint) -> CANDIDATE_PROCESSING (dedupe/normalize) ->
-SOCIAL_SOURCE_VALIDATION (filter to real social platforms, fetch each
-candidate in rank order, compare faces, skip failures rather than
-trusting result #1) -> DISCOVERED or NO_MATCH
-```
-Never touches the blockchain. Candidates are tried in order until one
-passes fetch + face-match — the code explicitly walks past unreachable
-or non-matching candidates rather than assuming the top result is
-correct (covered by a dedicated test).
-
-**`register(image_path, claimed_url, dry_run)`** — claimed-source
-verification, with optional on-chain anchoring:
-```
-INPUT_VALIDATION -> FACE_ANALYSIS -> SOURCE_FETCH -> FACE_COMPARISON ->
-LIVE_SEARCH (original input image, same evidence standard as discover)
--> EVIDENCE_DECISION (VERIFIED or CORROBORATED) -> MANIFEST_BUILD ->
-IPFS_PIN (optional) -> BLOCKCHAIN_REGISTER -> ON_CHAIN_VERIFY
-```
-`--dry-run` stops before `BLOCKCHAIN_REGISTER`. A real run requires
-typed confirmation (`"confirm"` at the CLI, or the literal string
-`"REGISTER"` at the API) — this exists specifically so a script bug or
-an accidental key press can't spend testnet POL.
-
-### Local API adapter
-
-`src/api.py` exposes `discover`/`register`/`audit`/`check-config` over
-HTTP for a future UI layer, with one deliberate asymmetry: `/api/verify`
-and `/api/register` are **separate endpoints**, not one endpoint with a
-dry-run flag — so a frontend bug can flip a boolean but can't
-accidentally call the wrong route into a real transaction.
-
-```bash
-uvicorn src.api:app --reload --port 8000   # http://127.0.0.1:8000/docs
+```mermaid
+flowchart TD
+    A[Image] --> B[Face Analysis]
+    B --> C[Live Reverse-Image Search]
+    C --> D[Social-Media Discovery]
+    D --> E[Source Validation]
+    E --> F[Face Correspondence]
+    F --> G{Evidence Decision}
+    G -->|Rediscovered independently| H[CORROBORATED]
+    G -->|Source valid, not rediscovered| H2[VERIFIED]
+    H --> I[Provenance Manifest]
+    I --> J[SHA-256 Digest]
+    J --> K[Polygon Amoy registerRecord]
+    K --> L[Transaction Confirmed]
+    L --> M[Independent On-Chain Audit]
+    M --> N[ON_CHAIN_VERIFIED]
 ```
 
-### Evidence states
+Every box above is a real stage in `pipeline.py`, in the actual order
+the code executes them — nothing here is aspirational.
+
+---
+
+## Two entry points
+
+### Discovery — the primary Task 3 flow
 
 ```
-REJECTED   NO_MATCH   DISCOVERED   VERIFIED   CORROBORATED
-ON_CHAIN_VERIFIED   TAMPER_DETECTED
+IMAGE ONLY
+   |
+   v
+LIVE REVERSE-IMAGE SEARCH   (real SerpApi upload, no URL given)
+   |
+   v
+SOCIAL-MEDIA CANDIDATE FILTER   (Wikipedia/news/blogs excluded)
+   |
+   v
+SOURCE VALIDATION   (fetch + face-compare each candidate, in rank order)
+   |
+   v
+DISCOVERED  or  NO_MATCH
 ```
-Every manifest also embeds a `verification_policy` block recording
-*which rules* produced its status — a judge can see this without
-reading source code.
+No claimed URL is required or accepted. Never touches the blockchain.
+
+### Verification — claimed-source corroboration + optional anchoring
+
+```
+IMAGE + CLAIMED URL
+   |
+   v
+SOURCE FETCH + FACE CORRESPONDENCE
+   |
+   v
+INDEPENDENT LIVE SEARCH   (of the ORIGINAL image, same standard as Discovery)
+   |
+   v
+VERIFIED  or  CORROBORATED
+   |
+   v
+MANIFEST -> SHA-256 -> (optional) POLYGON AMOY -> ON_CHAIN_VERIFIED
+```
+The claimed URL is never trusted on its own — it has to be
+independently rediscovered by the same search mechanism Discovery uses.
+
+---
+
+## 🧠 Backend Pipeline — for judges
+
+Every stage below is a real, separately testable step in `pipeline.py`.
+This section exists to make the architecture explainable at a glance.
+
+### Stage 01 — Input Validation
+**What happens:** the original file bytes are read and hashed
+(`original_file_sha256`), and basic metadata (dimensions, format) is
+extracted.
+**Why:** establishes an exact, immutable input artifact before any
+processing touches it — the manifest's input hash always traces back
+to these literal bytes, never a resized or re-encoded copy.
+
+### Stage 02 — Face Analysis
+**What happens:** face detection, a quality gate (rejects faces under
+~60px), pretrained 128-dimension encoding, then a SHA-256 hash of that
+embedding.
+**Technology:** `face_recognition` / `dlib`, pretrained only.
+**Explicitly:** no custom training, no person-specific classifier, no
+hardcoded identities, no input→person dictionary anywhere in the code.
+Zero faces or ambiguous multi-face images are rejected rather than
+guessed at.
+
+### Stage 03 — Live Reverse-Image Search
+**What happens:** the image is sent to SerpApi's Google Lens engine at
+runtime — via a real upload endpoint (`POST /image` → `image_id`) for
+Discovery, or a URL-based search for Verification — and real results
+come back.
+**Explicitly:** no hardcoded source, no mocked result, no URL supplied
+to Discovery mode at all.
+
+### Stage 04 — Candidate Processing
+**What happens:** `collect → parse → normalize (URL canonicalization,
+platform aliasing) → deduplicate → classify → rank`. The code never
+does `results[0]` and assumes that's correct.
+
+### Stage 05 — Social-Media Source Validation (Discovery) / Claimed Source Fetch (Verification)
+**Discovery:** filters candidates to a real hostname allowlist (x.com,
+instagram.com, facebook.com, linkedin.com, youtube.com, threads.net,
+tiktok.com — Wikipedia/news/blogs don't count), then fetches and
+face-compares each candidate **in rank order**, skipping inaccessible
+or non-matching ones rather than trusting the top result.
+**Verification:** fetches the specific claimed URL, extracts its
+`og:image`, and validates it's actually reachable.
+
+### Stage 06 — Face Correspondence
+**What happens:** the standard `face_recognition` Euclidean distance
+between two embeddings, compared against a configurable threshold.
+Reported as `distance` / `threshold` / `decision` — never as an
+invented percentage like "98.7% identity."
+
+### Stage 07 — Evidence Decision
+```
+DISCOVERED / VERIFIED  ->  CORROBORATED
+```
+A claimed or discovered source that passes direct validation is
+`VERIFIED`. It only becomes `CORROBORATED` if an independent live
+search — starting from nothing but the original image — rediscovers
+that exact source on its own. This is deliberately a higher bar than a
+user simply supplying a URL: the system has to find its way back to
+the source without being told where to look.
+
+### Stage 08 — Provenance Manifest
+**What happens:** a canonical, deterministically-serialized JSON
+document recording input hash, face evidence, source evidence, search
+evidence (including a versioned `verification_policy` block stating
+exactly which rules were required), and the resulting status.
+
+### Stage 09 — Cryptographic Commitment
+```
+manifest -> canonical JSON (sorted keys, fixed separators, UTF-8) -> SHA-256 -> bytes32
+```
+Same manifest always produces the same hash; changing one field always
+changes it — enforced by dedicated tests.
+
+### Stage 10 — Polygon Amoy
+**What happens:** `FaceVerificationRegistry.sol` stores only
+`recordHash`, `submitter`, `timestamp`, and an optional `manifestURI` —
+never raw images or biometric vectors. The ABI is generated directly
+from source by the real `solc` compiler (`scripts/compile_contract.py`),
+not hand-written.
+
+### Stage 11 — Independent On-Chain Audit
+```
+local manifest -> recompute hash -> read the ORIGINALLY REGISTERED hash
+from verification.json -> query chain for that hash -> compare
+```
+This exact design was chosen after finding a real bug: re-hashing a
+*tampered* manifest and looking up *that* hash on-chain returns "not
+found," not "found but mismatched" — because a tampered manifest hashes
+to a value that was never registered. Comparing against the originally
+registered hash is what actually detects tampering.
+```
+match     -> ON_CHAIN_VERIFIED
+mismatch  -> TAMPER_DETECTED
+```
 
 ---
 
@@ -172,27 +247,21 @@ reading source code.
 **Protects against**
 - A claimed source that was never independently corroborated being
   reported as strongly verified — gated at `CORROBORATED`, never below.
-- Post-hoc tampering with the local manifest: `audit` compares the
-  current manifest hash against the hash that was *actually
-  registered* (read from `verification.json`), not one re-derived from
-  a possibly-tampered file — re-hashing a tampered manifest and looking
-  that new hash up on-chain would just return "not found," not "found
-  but mismatched." (This was a real bug we found and fixed while
-  validating the audit path — see the checklist below.)
+- Post-hoc manifest tampering (see Stage 11 above).
 - False "verified" output from a failed/reverted transaction — nothing
   advances past `CORROBORATED` without a receipt `status == 1` **and**
   a separate read-only on-chain confirmation.
-- Silent first-candidate selection — both `discover`'s social-source
-  validation and `register`'s search-candidate matching explicitly
-  iterate past failures rather than trusting the top result.
-- Accidental blockchain writes — a confirmation gate (CLI prompt or
-  API literal-string match) sits in front of every real transaction.
+- Silent first-candidate selection in either flow.
+- Accidental blockchain writes — a confirmation gate (CLI typed prompt,
+  or an exact-literal-string match at the API) sits in front of every
+  real transaction.
 
 **Does not protect against**
 - A source page itself being fraudulent or a deepfake — this checks
   *consistency*, not real-world ground truth.
 - Search-index gaps — a genuine source SerpApi hasn't indexed yet
-  correctly stops at `VERIFIED`/`NO_MATCH`, not a false negative bug.
+  correctly stops short of `CORROBORATED`, which is a provider
+  limitation, not a false negative bug.
 - Someone with the deployer's private key registering false records —
   the chain proves *that a hash was committed by that address at that
   time*, not that the underlying evidence was correct.
@@ -201,7 +270,7 @@ reading source code.
 
 ## Privacy model
 
-- Scoped to **public, authorized material** only: public figures,
+- Scoped to **public, authorized material** only — public figures,
   public posts, CC/public-domain media, or images you have explicit
   permission to verify. No scraping of private accounts or bypassing
   access controls.
@@ -222,8 +291,8 @@ pip install -r requirements.txt
 ```
 
 `dlib` has no prebuilt wheel on some platforms (notably Windows) and
-builds from source — install `cmake` + a C++ toolchain first, or install
-`dlib` via `conda-forge` to skip compiling entirely.
+builds from source — install `cmake` + a C++ toolchain first, or
+install `dlib` via `conda-forge` to skip compiling entirely.
 
 ```bash
 cp .env.example .env
@@ -231,21 +300,41 @@ cp .env.example .env
 ```
 
 **SerpApi** — create an account, set `SERPAPI_API_KEY`. `discover` uses
-the real image-upload endpoint (`POST /image` → `image_id`, 500 KB max,
-JPG/PNG/WebP); `register` uses the URL-based `engine=google_lens` search.
+the real image-upload endpoint (500 KB max, JPG/PNG/WebP); `register`
+uses the URL-based `engine=google_lens` search.
 
-**Polygon Amoy** — chain ID `80002`. Get an RPC URL (Alchemy/Infura/public
-endpoint), fund a **testnet-only** wallet from the official Polygon
-faucet, set `PRIVATE_KEY`. Never use a wallet holding real funds.
+**Polygon Amoy** — chain ID `80002`. Get an RPC URL (Alchemy/Infura/
+public endpoint), fund a **testnet-only** wallet from the official
+Polygon faucet, set `PRIVATE_KEY`. Never use a wallet holding real funds.
 
 **Deploying the contract** — open [Remix](https://remix.ethereum.org),
 paste `contracts/FaceVerificationRegistry.sol`, compile with Solidity
 `^0.8.24`, deploy via Injected Provider on Amoy, copy the address into
-`CONTRACT_ADDRESS`. The shipped ABI (`contracts/FaceVerificationRegistry.abi.json`)
-is generated directly from source by the real `solc` compiler via
-`scripts/compile_contract.py` — never hand-written.
+`CONTRACT_ADDRESS`. The shipped ABI is generated directly from source
+by the real `solc` compiler via `scripts/compile_contract.py`.
 
 ---
+
+## Quick start
+
+```bash
+# 1. Find a matching public social-media post from an image alone — no URL, no cost
+python -m src.cli discover --image examples/positive.jpg
+
+# 2. Verify a specific claimed URL, without spending anything
+python -m src.cli register --image examples/positive.jpg \
+  --url "https://facebook.com/.../post" --dry-run
+
+# 3. Confirm your RPC/wallet/ABI/contract wiring, read-only
+python -m src.cli check-config
+
+# 4. Go on-chain for real (prompts for typed confirmation)
+python -m src.cli register --image examples/positive.jpg \
+  --url "https://facebook.com/.../post"
+
+# 5. Independently re-verify what's on-chain against the local manifest
+python -m src.cli audit --manifest proof/manifest.json
+```
 
 ## Commands
 
@@ -253,12 +342,25 @@ is generated directly from source by the real `solc` compiler via
 |---|---|---|
 | `discover --image <path>` | Image → matching social-media post, no URL needed | Never |
 | `register --image <path> --url <url> --dry-run` | Full pipeline, stops before any transaction | Never |
-| `register --image <path> --url <url>` | Full pipeline + real on-chain registration (prompts for typed confirmation, or pass `--yes`) | Yes |
+| `register --image <path> --url <url>` | Full pipeline + real on-chain registration (typed confirmation, or `--yes`) | Yes |
 | `check-config` | Confirms RPC/wallet/ABI/contract wiring | Read-only |
 | `audit --manifest <path>` | Compares a manifest against what's actually registered on-chain; detects tampering | Read-only |
 
 Natural demo flow: `discover` → feed its matched URL into
 `register --dry-run` → confirm `CORROBORATED` → real `register` → `audit`.
+
+## Local API adapter
+
+`src/api.py` exposes the same functions over HTTP for a future UI layer
+— zero duplicated logic, same source of truth as the CLI.
+`/api/verify` and `/api/register` are deliberately separate endpoints
+(not one endpoint with a dry-run flag), and `/api/register` requires an
+exact literal confirmation string — a frontend bug can flip a boolean,
+but it can't accidentally call the wrong route into a real transaction.
+
+```bash
+uvicorn src.api:app --reload --port 8000   # http://127.0.0.1:8000/docs
+```
 
 ---
 
@@ -286,9 +388,9 @@ Before any real registration exists, `audit` correctly reports
 pytest tests/ -v
 ```
 
-78 tests, all passing. External services (SerpApi, Pinata, Polygon RPC)
-are mocked in unit tests — no network calls or credentials required.
-The live demo path itself is never mocked.
+78 tests, run locally (no CI configured). External services (SerpApi,
+Pinata, Polygon RPC) are mocked in unit tests — no network calls or
+credentials required. The live demo path itself is never mocked.
 
 ---
 
@@ -297,10 +399,8 @@ The live demo path itself is never mocked.
 - SerpApi's Image API caps uploads at 500 KB (JPG/PNG/WebP); `discover`
   fails closed rather than silently re-encoding oversized files, and
   the `image_id` it returns expires after 10 minutes.
-- `discover` only searches an allowlist of real social platforms
-  (x.com, instagram.com, facebook.com, linkedin.com, youtube.com,
-  threads.net, tiktok.com) — a legitimate presence elsewhere correctly
-  returns `NO_MATCH` rather than falling back to a non-social source.
+- `discover` only searches an allowlist of real social platforms — a
+  legitimate presence elsewhere correctly returns `NO_MATCH`.
 - A genuine source SerpApi hasn't indexed yet correctly stops short of
   `CORROBORATED` — a provider limitation, not a bug.
 - SerpApi/Pinata both have plan-based rate limits.
@@ -308,8 +408,19 @@ The live demo path itself is never mocked.
   quality checks by design; multi-face images are rejected rather than
   guessed at.
 - RPC/IPFS outages surface as clear errors — IPFS failure is
-  non-fatal (registration proceeds with an empty `manifestURI`); RPC
-  failure is fatal by design.
+  non-fatal; RPC failure is fatal by design.
+
+---
+
+## Visual assets
+
+This README currently has no screenshots or rendered UI images — none
+exist in the repository yet, and none are referenced here rather than
+linking to files that don't exist. If you want a visual hero section,
+the cleanest additions would be: a terminal recording (asciinema or a
+GIF) of a real `discover` run, and — once the local UI layer is built —
+a screenshot of the investigation view. Drop them in `docs/screenshots/`
+and reference them with a relative path once they exist.
 
 ---
 
