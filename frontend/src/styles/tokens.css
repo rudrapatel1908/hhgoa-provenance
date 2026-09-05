@@ -1,0 +1,40 @@
+:root {
+  /* Environment -- warm, human */
+  --ivory: #f3edde;
+  --sand: #e4d9be;
+  --terracotta: #c97b58;
+  --forest: #16261f;
+  --forest-deep: #0f1a15;
+  --charcoal: #211d17;
+
+  /* Interface surfaces */
+  --surface-paper: #f6f2e6;
+  --surface-paper-border: #d9cdaa;
+  --surface-dark: var(--forest);
+  --surface-dark-border: #2b3d33;
+
+  /* Signal colors -- used semantically only, never decoratively */
+  --signal-teal: #2e7d6e;
+  --signal-amber: #d9a441;
+  --signal-violet: #7a6fa6;
+  --signal-emerald: #3f8f5f;
+  --signal-red: #b5473f;
+
+  /* Type */
+  --font-display: "Public Sans", -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --radius-card: 3px;
+  --radius-pill: 999px;
+
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

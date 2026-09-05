@@ -1,0 +1,41 @@
+.app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.viewport {
+  position: relative;
+  flex: 1;
+  min-height: 0; /* prevents flex items from growing past their flex-basis to fit content */
+  overflow: auto;
+}
+
+.placeholder {
+  position: relative;
+  z-index: 1;
+  max-width: 640px;
+  margin: 10vh auto;
+  padding: 24px;
+  background: rgba(15, 26, 21, 0.7);
+  border: 1px solid var(--surface-dark-border);
+  border-radius: var(--radius-card);
+}
+
+.actionBtn {
+  margin-top: 14px;
+  background: var(--signal-teal);
+  color: var(--ivory);
+  border: none;
+  padding: 12px 26px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.88rem;
+  letter-spacing: 0.02em;
+  border-radius: 2px;
+  transition: background 0.2s var(--ease-standard);
+}
+
+.actionBtn:hover {
+  background: #357f70;
+}

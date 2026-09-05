@@ -13,7 +13,7 @@ import os
 import time
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from PIL import Image
 import io
@@ -75,6 +75,7 @@ def register(
     claimed_url: str,
     config: Optional[PipelineConfig] = None,
     dry_run: bool = False,
+    on_stage: Optional[Callable[[StageRecord], None]] = None,
 ) -> PipelineResult:
     """
     Run the full pipeline:
@@ -86,12 +87,22 @@ def register(
     Returns a PipelineResult whose final_status is the HIGHEST evidence
     state actually earned. Never returns ON_CHAIN_VERIFIED unless a
     confirmed transaction and an independent read-only check both pass.
+
+    on_stage, if provided, is called synchronously with each StageRecord
+    the instant it's produced -- not buffered until the run finishes.
+    Purely additive: default None preserves the exact prior behavior for
+    the CLI and every existing caller/test.
     """
     config = config or PipelineConfig()
     stages: list[StageRecord] = []
 
+    def emit(record: StageRecord) -> None:
+        stages.append(record)
+        if on_stage is not None:
+            on_stage(record)
+
     def stage_fail(name: str, detail: str, status: EvidenceStatus) -> PipelineResult:
-        stages.append(StageRecord(stage=name, status=StageStatus.FAIL, duration_ms=0, error=detail))
+        emit(StageRecord(stage=name, status=StageStatus.FAIL, duration_ms=0, error=detail))
         return PipelineResult(final_status=status, stages=stages, dry_run=dry_run)
 
     # ---- INPUT_VALIDATION -------------------------------------------------
@@ -111,7 +122,7 @@ def register(
     except Exception as exc:
         return stage_fail("INPUT_VALIDATION", f"unreadable image: {exc}", EvidenceStatus.REJECTED)
 
-    stages.append(StageRecord(
+    emit(StageRecord(
         stage="INPUT_VALIDATION", status=StageStatus.PASS,
         duration_ms=(time.perf_counter() - t0) * 1000,
         detail=f"sha256={original_sha256} {width}x{height} {fmt}",
@@ -120,12 +131,12 @@ def register(
     # ---- FACE_ANALYSIS ------------------------------------------------
     face_evidence, dur = _timed(vision_mod.analyze_face, original_bytes)
     if not face_evidence.usable:
-        stages.append(StageRecord(
+        emit(StageRecord(
             stage="FACE_ANALYSIS", status=StageStatus.FAIL, duration_ms=dur,
             error=face_evidence.error, detail="; ".join(face_evidence.quality_notes),
         ))
         return PipelineResult(final_status=EvidenceStatus.REJECTED, stages=stages, dry_run=dry_run)
-    stages.append(StageRecord(
+    emit(StageRecord(
         stage="FACE_ANALYSIS", status=StageStatus.PASS, duration_ms=dur,
         detail=f"faces={face_evidence.face_count}",
     ))
@@ -133,12 +144,12 @@ def register(
     # ---- SOURCE_FETCH ---------------------------------------------------
     source_evidence, dur = _timed(source_mod.fetch_source, claimed_url)
     if not source_evidence.reachable or not source_evidence.image_bytes:
-        stages.append(StageRecord(
+        emit(StageRecord(
             stage="SOURCE_FETCH", status=StageStatus.FAIL, duration_ms=dur,
             error=source_evidence.error,
         ))
         return PipelineResult(final_status=EvidenceStatus.REJECTED, stages=stages, dry_run=dry_run)
-    stages.append(StageRecord(
+    emit(StageRecord(
         stage="SOURCE_FETCH", status=StageStatus.PASS, duration_ms=dur,
         detail=f"platform={source_evidence.platform} method={source_evidence.extraction_method}",
     ))
@@ -146,7 +157,7 @@ def register(
     # ---- FACE_COMPARISON --------------------------------------------------
     source_face, dur1 = _timed(vision_mod.analyze_face, source_evidence.image_bytes)
     if not source_face.usable:
-        stages.append(StageRecord(
+        emit(StageRecord(
             stage="FACE_COMPARISON", status=StageStatus.FAIL, duration_ms=dur1,
             error=f"source image face analysis failed: {source_face.error}",
         ))
@@ -156,7 +167,7 @@ def register(
         vision_mod.compare_faces, face_evidence.embedding, source_face.embedding,
         threshold=config.face_distance_threshold,
     )
-    stages.append(StageRecord(
+    emit(StageRecord(
         stage="FACE_COMPARISON", status=comparison.decision, duration_ms=dur1 + dur2,
         detail=f"distance={comparison.distance:.4f} threshold={comparison.threshold}",
     ))
@@ -185,7 +196,7 @@ def register(
         )
         if search_result.succeeded:
             candidates = search_mod.dedupe_candidates(search_result.candidates)
-            stages.append(StageRecord(
+            emit(StageRecord(
                 stage="LIVE_SEARCH", status=StageStatus.PASS, duration_ms=dur,
                 detail=(
                     f"visual_matches={search_result.visual_match_count} "
@@ -194,12 +205,12 @@ def register(
                 ),
             ))
         else:
-            stages.append(StageRecord(
+            emit(StageRecord(
                 stage="LIVE_SEARCH", status=StageStatus.FAIL, duration_ms=dur,
                 error=search_result.error,
             ))
     else:
-        stages.append(StageRecord(
+        emit(StageRecord(
             stage="LIVE_SEARCH", status=StageStatus.SKIPPED, duration_ms=0,
             detail="SERPAPI_API_KEY not configured",
         ))
@@ -243,7 +254,7 @@ def register(
         if evidence_status == EvidenceStatus.CORROBORATED
         else "STATUS: VERIFIED / CORROBORATION: NOT ESTABLISHED"
     )
-    stages.append(StageRecord(
+    emit(StageRecord(
         stage="EVIDENCE_DECISION", status=StageStatus.PASS,
         duration_ms=(time.perf_counter() - t0) * 1000, detail=decision_detail,
     ))
@@ -287,7 +298,7 @@ def register(
         ),
     )
     manifest_hash_hex = manifest_mod.manifest_sha256_hex(record)
-    stages.append(StageRecord(
+    emit(StageRecord(
         stage="MANIFEST_BUILD", status=StageStatus.PASS,
         duration_ms=(time.perf_counter() - t0) * 1000, detail=manifest_hash_hex,
     ))
@@ -298,7 +309,7 @@ def register(
     )
 
     if dry_run:
-        stages.append(StageRecord(
+        emit(StageRecord(
             stage="BLOCKCHAIN_REGISTER", status=StageStatus.SKIPPED, duration_ms=0,
             detail="dry-run: no transaction sent, no on-chain verification claimed",
         ))
@@ -311,14 +322,14 @@ def register(
     pin_result = ipfs_mod.pin_manifest(manifest_dict, jwt=config.pinata_jwt)
     if pin_result.pinned:
         result.ipfs_cid = pin_result.cid
-        stages.append(StageRecord(
+        emit(StageRecord(
             stage="IPFS_PIN", status=StageStatus.PASS,
             duration_ms=(time.perf_counter() - t0) * 1000, detail=pin_result.cid,
         ))
     else:
         # IPFS is not a single point of failure for chain registration --
         # continue with an empty manifestURI, per project policy.
-        stages.append(StageRecord(
+        emit(StageRecord(
             stage="IPFS_PIN", status=StageStatus.SKIPPED,
             duration_ms=(time.perf_counter() - t0) * 1000, error=pin_result.error,
         ))
@@ -328,7 +339,7 @@ def register(
         chain_config = ChainConfig.from_env()
         client = RegistryClient(chain_config)
     except ConfigError as exc:
-        stages.append(StageRecord(
+        emit(StageRecord(
             stage="BLOCKCHAIN_REGISTER", status=StageStatus.FAIL, duration_ms=0, error=str(exc),
         ))
         return result  # still returns CORROBORATED/VERIFIED -- just not on-chain
@@ -340,14 +351,14 @@ def register(
     try:
         registration = client.register_record(record_hash_bytes, manifest_uri)
     except TransactionFailed as exc:
-        stages.append(StageRecord(
+        emit(StageRecord(
             stage="BLOCKCHAIN_REGISTER", status=StageStatus.FAIL,
             duration_ms=(time.perf_counter() - t0) * 1000, error=str(exc),
         ))
         return result
 
     result.blockchain = registration
-    stages.append(StageRecord(
+    emit(StageRecord(
         stage="BLOCKCHAIN_REGISTER", status=StageStatus.PASS,
         duration_ms=(time.perf_counter() - t0) * 1000,
         detail=f"tx={registration.tx_hash} block={registration.block_number}",
@@ -357,14 +368,14 @@ def register(
     onchain_verification = client.verify_record(record_hash_bytes, manifest_hash_hex)
     result.onchain_verification = onchain_verification
     if onchain_verification.hashes_match:
-        stages.append(StageRecord(
+        emit(StageRecord(
             stage="ON_CHAIN_VERIFY", status=StageStatus.PASS,
             duration_ms=(time.perf_counter() - t0) * 1000,
             detail="local digest == on-chain digest",
         ))
         result.final_status = EvidenceStatus.ON_CHAIN_VERIFIED
     else:
-        stages.append(StageRecord(
+        emit(StageRecord(
             stage="ON_CHAIN_VERIFY", status=StageStatus.FAIL,
             duration_ms=(time.perf_counter() - t0) * 1000,
             error="on-chain digest did not match local digest",
@@ -380,6 +391,7 @@ def discover(
     *,
     image_path: str,
     config: Optional[PipelineConfig] = None,
+    on_stage: Optional[Callable[[StageRecord], None]] = None,
 ) -> "DiscoveryResult":
     """
     Image-only discovery: the primary Task 3 flow. Never sends a
@@ -395,14 +407,23 @@ def discover(
     NOT `results[0]` -- unreachable pages, pages with no extractable
     image, and face mismatches are all skipped in favor of the next
     candidate, and none of that is decided in advance.
+
+    on_stage, if provided, is called synchronously with each StageRecord
+    the instant it's produced. Purely additive; default None preserves
+    exact prior behavior for the CLI and every existing caller/test.
     """
     from .models import DiscoveredMatch, DiscoveryResult
 
     config = config or PipelineConfig()
     stages: list[StageRecord] = []
 
+    def emit(record: StageRecord) -> None:
+        stages.append(record)
+        if on_stage is not None:
+            on_stage(record)
+
     def fail(name: str, detail: str, status: EvidenceStatus) -> "DiscoveryResult":
-        stages.append(StageRecord(stage=name, status=StageStatus.FAIL, duration_ms=0, error=detail))
+        emit(StageRecord(stage=name, status=StageStatus.FAIL, duration_ms=0, error=detail))
         return DiscoveryResult(final_status=status, stages=stages)
 
     # ---- INPUT_VALIDATION -------------------------------------------------
@@ -420,7 +441,7 @@ def discover(
         width, height, fmt = _image_dimensions(original_bytes)
     except Exception as exc:
         return fail("INPUT_VALIDATION", f"unreadable image: {exc}", EvidenceStatus.REJECTED)
-    stages.append(StageRecord(
+    emit(StageRecord(
         stage="INPUT_VALIDATION", status=StageStatus.PASS,
         duration_ms=(time.perf_counter() - t0) * 1000,
         detail=f"sha256={original_sha256} {width}x{height} {fmt}",
@@ -433,12 +454,12 @@ def discover(
     # ---- FACE_ANALYSIS ------------------------------------------------
     face_evidence, dur = _timed(vision_mod.analyze_face, original_bytes)
     if not face_evidence.usable:
-        stages.append(StageRecord(
+        emit(StageRecord(
             stage="FACE_ANALYSIS", status=StageStatus.FAIL, duration_ms=dur,
             error=face_evidence.error,
         ))
         return DiscoveryResult(final_status=EvidenceStatus.REJECTED, stages=stages)
-    stages.append(StageRecord(
+    emit(StageRecord(
         stage="FACE_ANALYSIS", status=StageStatus.PASS, duration_ms=dur,
         detail=f"faces={face_evidence.face_count}",
     ))
@@ -452,12 +473,12 @@ def discover(
         image_format=fmt_for_upload, max_results=config.max_search_results,
     )
     if not search_result.succeeded:
-        stages.append(StageRecord(
+        emit(StageRecord(
             stage="LIVE_SEARCH", status=StageStatus.FAIL, duration_ms=dur,
             error=search_result.error,
         ))
         return DiscoveryResult(final_status=EvidenceStatus.REJECTED, stages=stages)
-    stages.append(StageRecord(
+    emit(StageRecord(
         stage="LIVE_SEARCH", status=StageStatus.PASS, duration_ms=dur,
         detail=(
             f"visual_matches={search_result.visual_match_count} "
@@ -470,13 +491,13 @@ def discover(
     t0 = time.perf_counter()
     deduped = search_mod.dedupe_candidates(search_result.candidates)
     social_candidates = [c for c in deduped if source_mod.is_social_platform(c.canonical_url)]
-    stages.append(StageRecord(
+    emit(StageRecord(
         stage="CANDIDATE_PROCESSING", status=StageStatus.PASS,
         duration_ms=(time.perf_counter() - t0) * 1000,
         detail=f"candidates={len(deduped)} social_candidates={len(social_candidates)}",
     ))
     if not social_candidates:
-        stages.append(StageRecord(
+        emit(StageRecord(
             stage="SOCIAL_SOURCE_VALIDATION", status=StageStatus.SKIPPED, duration_ms=0,
             detail="no social-media candidates in search results",
         ))
@@ -514,7 +535,7 @@ def discover(
 
     duration_ms = (time.perf_counter() - t0) * 1000
     if best_match is None:
-        stages.append(StageRecord(
+        emit(StageRecord(
             stage="SOCIAL_SOURCE_VALIDATION", status=StageStatus.FAIL, duration_ms=duration_ms,
             error=f"no social candidate (of {len(social_candidates)} checked) passed source access + face match",
         ))
@@ -526,11 +547,11 @@ def discover(
             social_candidate_count=len(social_candidates),
         )
 
-    stages.append(StageRecord(
+    emit(StageRecord(
         stage="SOCIAL_SOURCE_VALIDATION", status=StageStatus.PASS, duration_ms=duration_ms,
         detail=f"platform={best_match.platform} rank=#{best_match.candidate_rank + 1}",
     ))
-    stages.append(StageRecord(
+    emit(StageRecord(
         stage="FACE_CORRESPONDENCE", status=StageStatus.PASS, duration_ms=0,
         detail=f"distance={best_match.face_comparison.distance:.4f} threshold={best_match.face_comparison.threshold}",
     ))

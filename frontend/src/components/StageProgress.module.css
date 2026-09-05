@@ -1,0 +1,73 @@
+.track {
+  display: flex;
+  align-items: center;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+}
+
+.node {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 6px 4px;
+  color: #5c6b60;
+}
+
+.node:disabled {
+  cursor: default;
+}
+
+.num {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.06em;
+}
+
+.upcoming .num,
+.upcoming .label {
+  color: #4a564d;
+}
+
+.complete .num {
+  color: var(--signal-teal);
+}
+.complete .label {
+  color: #9fb0a4;
+}
+
+.current .num {
+  color: var(--signal-amber);
+}
+.current .label {
+  color: var(--ivory);
+  font-weight: 500;
+}
+
+.connector {
+  width: 20px;
+  height: 1px;
+  background: var(--surface-dark-border);
+  margin: 0 2px;
+}
+
+.connectorDone {
+  background: var(--signal-teal);
+}
+
+@media (max-width: 900px) {
+  .label { display: none; }
+  .connector { width: 10px; }
+}

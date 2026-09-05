@@ -13,18 +13,21 @@ Never deployed publicly -- localhost only, per project scope.
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import enum
 import json
+import queue
 import shutil
 import tempfile
+import threading
 from pathlib import Path
-from typing import Optional
+from typing import AsyncIterator, Callable, Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from . import pipeline
 
@@ -72,6 +75,53 @@ def _save_upload_to_temp(image: UploadFile) -> str:
     with tmp as f:
         shutil.copyfileobj(image.file, f)
     return tmp.name
+
+
+def _sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+async def _stream_pipeline_run(run: Callable[[Callable], object]) -> AsyncIterator[str]:
+    """
+    Runs a blocking pipeline call (discover/register) in a background
+    thread, forwarding each StageRecord to the client the instant it's
+    actually emitted by pipeline.py -- never buffered until the run
+    finishes, never a simulated/fixed-duration animation. `run` must be
+    a zero-extra-arg closure that accepts a single on_stage callback and
+    returns the final PipelineResult/DiscoveryResult (or raises).
+
+    The final SSE event always carries the complete, real result object
+    -- same dataclass the CLI prints from -- so the frontend's terminal
+    state is never inferred from partial stage events.
+    """
+    loop = asyncio.get_event_loop()
+    q: "queue.Queue" = queue.Queue()
+    DONE = object()
+    outcome: dict = {}
+
+    def on_stage(record) -> None:
+        q.put(("stage", _to_jsonable(record)))
+
+    def worker() -> None:
+        try:
+            outcome["result"] = run(on_stage)
+        except Exception as exc:  # noqa: BLE001 -- surfaced to the client, never swallowed
+            outcome["error"] = str(exc)
+        finally:
+            q.put((DONE, None))
+
+    threading.Thread(target=worker, daemon=True).start()
+
+    while True:
+        kind, payload = await loop.run_in_executor(None, q.get)
+        if kind is DONE:
+            break
+        yield _sse(kind, payload)
+
+    if "error" in outcome:
+        yield _sse("error", {"detail": outcome["error"]})
+    else:
+        yield _sse("result", _to_jsonable(outcome["result"]))
 
 
 @app.get("/api/health")
@@ -130,6 +180,66 @@ async def register_endpoint(
     finally:
         Path(image_path).unlink(missing_ok=True)
     return _to_jsonable(result)
+
+
+@app.post("/api/discover/stream")
+async def discover_stream_endpoint(image: UploadFile = File(...)):
+    """Same call as /api/discover, but emits each real StageRecord over
+    Server-Sent Events as the pipeline actually produces it. Never sends
+    a blockchain transaction -- discover() cannot reach that code path."""
+    image_path = _save_upload_to_temp(image)
+
+    def run(on_stage):
+        try:
+            return pipeline.discover(image_path=image_path, on_stage=on_stage)
+        finally:
+            Path(image_path).unlink(missing_ok=True)
+
+    return StreamingResponse(_stream_pipeline_run(run), media_type="text/event-stream")
+
+
+@app.post("/api/verify/stream")
+async def verify_stream_endpoint(image: UploadFile = File(...), url: str = Form(...)):
+    """Streaming counterpart to /api/verify. Hardcoded dry_run=True, same
+    as the non-streaming endpoint -- no parameter can change that."""
+    image_path = _save_upload_to_temp(image)
+
+    def run(on_stage):
+        try:
+            return pipeline.register(
+                image_path=image_path, claimed_url=url, dry_run=True, on_stage=on_stage,
+            )
+        finally:
+            Path(image_path).unlink(missing_ok=True)
+
+    return StreamingResponse(_stream_pipeline_run(run), media_type="text/event-stream")
+
+
+@app.post("/api/register/stream")
+async def register_stream_endpoint(
+    image: UploadFile = File(...),
+    url: str = Form(...),
+    confirm: str = Form(...),
+):
+    """Streaming counterpart to /api/register -- the one endpoint capable
+    of a real blockchain write. Same literal-confirmation gate as the
+    non-streaming endpoint, checked before any pipeline work starts."""
+    if confirm != REGISTER_CONFIRMATION_STRING:
+        raise HTTPException(
+            status_code=400,
+            detail=f"confirmation_required: 'confirm' must equal '{REGISTER_CONFIRMATION_STRING}'",
+        )
+    image_path = _save_upload_to_temp(image)
+
+    def run(on_stage):
+        try:
+            return pipeline.register(
+                image_path=image_path, claimed_url=url, dry_run=False, on_stage=on_stage,
+            )
+        finally:
+            Path(image_path).unlink(missing_ok=True)
+
+    return StreamingResponse(_stream_pipeline_run(run), media_type="text/event-stream")
 
 
 @app.get("/api/audit")

@@ -1,0 +1,67 @@
+.scene {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.photo {
+  position: absolute;
+  inset: 0;
+  background-image: url("/backgrounds/scene.jpg");
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: center 62%;
+  transform: scale(1.03); /* hides sub-pixel edge gaps on resize */
+}
+
+/* Per-stage color tint -- see STAGE_TINT in GoaScene.tsx */
+.tint {
+  position: absolute;
+  inset: 0;
+  transition: background 1.4s var(--ease-standard);
+}
+
+/* Fixed vignette for text legibility regardless of stage --
+   darkest at top (under the top bar) and bottom (under stage panels),
+   lighter through the middle so the photo still reads. */
+.vignette {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(10, 18, 15, 0.55) 0%,
+    rgba(10, 18, 15, 0.12) 22%,
+    rgba(10, 18, 15, 0.12) 55%,
+    rgba(10, 18, 15, 0.6) 100%
+  );
+}
+
+/* Tablet -- keep the laptop/desk focal point in frame, shift up slightly */
+@media (max-width: 1100px) {
+  .photo {
+    background-position: center 58%;
+  }
+}
+
+/* Phone -- portrait crop needs a tighter, more centered focal point */
+@media (max-width: 640px) {
+  .photo {
+    background-position: 35% 65%;
+  }
+  .vignette {
+    background: linear-gradient(
+      180deg,
+      rgba(10, 18, 15, 0.65) 0%,
+      rgba(10, 18, 15, 0.2) 20%,
+      rgba(10, 18, 15, 0.2) 55%,
+      rgba(10, 18, 15, 0.7) 100%
+    );
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tint {
+    transition: none;
+  }
+}
