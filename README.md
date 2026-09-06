@@ -77,26 +77,26 @@ produce different real numbers.
 
 ## How TRACE works
 
-```mermaid
-flowchart TD
-    A[Image] --> B[Face Analysis]
-    B --> C[Live Reverse-Image Search]
-    C --> D[Social-Media Discovery]
-    D --> E[Source Validation]
-    E --> F[Face Correspondence]
-    F --> G{Evidence Decision}
-    G -->|Rediscovered independently| H[CORROBORATED]
-    G -->|Source valid, not rediscovered| H2[VERIFIED]
-    H --> I[Provenance Manifest]
-    I --> J[SHA-256 Digest]
-    J --> K[Polygon Amoy registerRecord]
-    K --> L[Transaction Confirmed]
-    L --> M[Independent On-Chain Audit]
-    M --> N[ON_CHAIN_VERIFIED]
-```
+This is the exact `register()` flow (the claimed-source verification
+path), stage for stage, in the order `pipeline.py` actually executes
+them — not a simplified aspirational version. The image-only `discover`
+path shares Stage 1, then diverges into social-platform filtering and
+rank-ordered candidate validation instead of a single claimed source;
+see [Two entry points](#two-entry-points) below for that path in detail.
 
-Every box above is a real stage in `pipeline.py`, in the actual order
-the code executes them — nothing here is aspirational.
+<p align="center">
+  <img src="docs/diagrams/pipeline-evidence-stages.svg" alt="TRACE pipeline: image through face analysis, claimed-source check, live reverse-image search, to an evidence decision of VERIFIED or CORROBORATED" width="640">
+</p>
+
+`CORROBORATED` evidence then flows into the cryptographic and on-chain
+half of the pipeline:
+
+<p align="center">
+  <img src="docs/diagrams/pipeline-chain-verification.svg" alt="TRACE pipeline: provenance manifest through SHA-256, Polygon Amoy registration, to an independent on-chain audit of ON_CHAIN_VERIFIED or TAMPER_DETECTED" width="640">
+</p>
+
+Both diagrams are static SVGs generated from, and checked against, the
+actual stage names emitted by `pipeline.py` — not hand-drawn from memory.
 
 ---
 
@@ -174,6 +174,15 @@ come back.
 **Explicitly:** no hardcoded source, no mocked result, no URL supplied
 to Discovery mode at all.
 
+> **Ordering differs between the two flows, on purpose.** `discover`
+> searches first (Stage 03), then validates whatever candidates come
+> back (Stage 05). `register` does the opposite — it fetches and
+> compares the claimed source *first*, then independently searches the
+> original image afterward, specifically so the search can't be
+> influenced by anything already known about the claimed URL. Stage
+> numbers below describe what each stage does, not one fixed order
+> both flows share.
+
 ### Stage 04 — Candidate Processing
 **What happens:** `collect → parse → normalize (URL canonicalization,
 platform aliasing) → deduplicate → classify → rank`. The code never
@@ -184,9 +193,11 @@ does `results[0]` and assumes that's correct.
 instagram.com, facebook.com, linkedin.com, youtube.com, threads.net,
 tiktok.com — Wikipedia/news/blogs don't count), then fetches and
 face-compares each candidate **in rank order**, skipping inaccessible
-or non-matching ones rather than trusting the top result.
+or non-matching ones rather than trusting the top result. This runs
+*after* Stage 03's search, since the candidates come from it.
 **Verification:** fetches the specific claimed URL, extracts its
-`og:image`, and validates it's actually reachable.
+`og:image`, and validates it's actually reachable. This runs *before*
+Stage 03's search in this flow — see the callout above.
 
 ### Stage 06 — Face Correspondence
 **What happens:** the standard `face_recognition` Euclidean distance
@@ -414,13 +425,15 @@ credentials required. The live demo path itself is never mocked.
 
 ## Visual assets
 
-This README currently has no screenshots or rendered UI images — none
-exist in the repository yet, and none are referenced here rather than
-linking to files that don't exist. If you want a visual hero section,
-the cleanest additions would be: a terminal recording (asciinema or a
-GIF) of a real `discover` run, and — once the local UI layer is built —
-a screenshot of the investigation view. Drop them in `docs/screenshots/`
-and reference them with a relative path once they exist.
+The two pipeline diagrams above (`docs/diagrams/*.svg`) are the only
+rendered visuals in this repository — generated to match the real stage
+names in `pipeline.py`, not hand-drawn. There are no screenshots or UI
+renders yet, and none are referenced here rather than linking to files
+that don't exist. The cleanest next additions would be: a terminal
+recording (asciinema or a GIF) of a real `discover` run, and — once the
+local UI layer is built — a screenshot of the investigation view. Drop
+them in `docs/screenshots/` and reference with a relative path once
+they exist.
 
 ---
 
@@ -480,5 +493,5 @@ hhgoa-provenance/
 [x] negative case (face mismatch / unreachable source -> REJECTED / NO_MATCH)
 [x] local API adapter, zero duplicated business logic vs. CLI
 [x] 78 tests passing
-[x] real on-chain registration 
+[ ] real on-chain registration -- deliberately deferred to the final demo
 ```
